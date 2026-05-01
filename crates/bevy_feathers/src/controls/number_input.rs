@@ -1,51 +1,46 @@
-use bevy_app::PropagateOver;
+use bevy_app::{Plugin, PreUpdate, PropagateOver};
 use bevy_asset::AssetServer;
+use bevy_camera::visibility::Visibility;
 use bevy_ecs::{
     component::Component,
     entity::Entity,
     event::EntityEvent,
-    hierarchy::{ChildOf, Children},
+    hierarchy::Children,
     observer::On,
-    query::With,
-    relationship::Relationship,
-    system::{Commands, Query, Res},
+    query::{Changed, With},
+    schedule::IntoScheduleConfigs,
+    system::Query,
     template::template,
 };
-use bevy_input::keyboard::{KeyCode, KeyboardInput};
-use bevy_input_focus::{FocusLost, FocusedInput, InputFocus};
-use bevy_log::warn;
+use bevy_picking::{hover::Hovered, PickingSystems};
 use bevy_scene::prelude::*;
-use bevy_text::{
-    EditableText, EditableTextFilter, FontSource, FontWeight, TextEdit, TextEditChange, TextFont,
+use bevy_text::{FontSource, FontWeight, TextFont};
+use bevy_ui::{
+    px, widget::Text, AlignItems, AlignSelf, Display, FlexDirection, JustifyContent, Node, UiRect,
 };
-use bevy_ui::{px, widget::Text, AlignItems, AlignSelf, Display, JustifyContent, Node, UiRect};
-use bevy_ui_widgets::{SelectAllOnFocus, ValueChange};
+use bevy_ui_widgets::{
+    NumberInput as CoreNumberInput, NumberSpinBoxValueInput, SelectAllOnFocus,
+    SetNumberSpinBoxValue, SpinBox, SpinBoxDecrementButton, SpinBoxIncrementButton,
+};
 
 use crate::{
     constants::{fonts, size},
-    controls::{text_input, text_input_container, TextInputProps},
-    theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemeToken},
+    controls::{
+        button, text_input, text_input_container, ButtonProps, ButtonVariant, TextInputProps,
+    },
+    theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemeToken, ThemedText},
     tokens,
 };
+
+pub use bevy_ui_widgets::{NumberFormat, NumberInputValue};
 
 /// Marker to indicate a number input widget with feathers styling.
 #[derive(Component, Default, Clone)]
 struct FeathersNumberInput;
 
-/// Used to indicate what format of numbers we are editing. This primarily affects the type
-/// of [`ValueChange`] event that is emitted.
-#[derive(Component, Default, Clone, Copy)]
-pub enum NumberFormat {
-    /// A 32-bit float
-    #[default]
-    F32,
-    /// A 64-bit float
-    F64,
-    /// A 32-bit integer
-    I32,
-    /// A 64-bit integer
-    I64,
-}
+/// Marker for the spinbox button container that should only be shown while hovered.
+#[derive(Component, Default, Clone)]
+struct FeathersSpinButtons;
 
 /// Parameters for the text input template, passed to [`number_input`] function.
 pub struct NumberInputProps {
@@ -69,65 +64,32 @@ impl Default for NumberInputProps {
     }
 }
 
-/// Represents numbers in different formats.
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum NumberInputValue {
-    /// An f32 value
-    F32(f32),
-    /// An f64 value
-    F64(f64),
-    /// An i32 value
-    I32(i32),
-    /// An i64 value
-    I64(i64),
-}
-
-impl core::fmt::Display for NumberInputValue {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            NumberInputValue::F32(v) => write!(f, "{}", v),
-            NumberInputValue::F64(v) => write!(f, "{}", v),
-            NumberInputValue::I32(v) => write!(f, "{}", v),
-            NumberInputValue::I64(v) => write!(f, "{}", v),
-        }
-    }
-}
-
-/// Event which can be sent to the number input widget to update the displayed value.
+/// Event which can be sent to the styled Feathers number input to update the displayed value.
+///
+/// This preserves the existing Feathers API by targeting the outer styled widget entity, and
+/// forwards internally to the wrapped core [`bevy_ui_widgets::SpinBox`].
 #[derive(Clone, EntityEvent)]
 pub struct UpdateNumberInput {
-    /// Target widget
+    /// Target widget.
     pub entity: Entity,
 
-    /// Value to change to
+    /// Value to change to.
     pub value: NumberInputValue,
 }
 
-/// Widget that permits text entry of floating-point numbers. This widget implements two-way
-/// synchronization:
-/// * when the widget has focus, it emits values (via a [`ValueChange<T>`]) event as the user types.
-///   The type of ``T`` will be ``f32``, ``f64``, ``i32``, or ``i64`` depending on the
-///   ``number_format`` parameter.
-/// * when the widget does not have focus, it listens for [`UpdateNumberInput`] events, and replaces
-///   the contents of the text buffer based on the value in that event.
+/// Styled Feathers wrapper around the core [`bevy_ui_widgets::SpinBox`].
 ///
-/// To avoid excessive updating, you should only update the number value when there is an actual
-/// change, that is, when the new value is different from the current value.
-///
-/// In most cases, the actual source of truth for the numeric value will be external, that is,
-/// some property in an app-specific data structure. It's the responsibility of the app to
-/// synchronize this value with the [`number_input`] widget in both directions:
-/// * When a [`ValueChange`] event is received, update the app-specific property.
-/// * When the app-specific property changes - either in response to a [`ValueChange`] event, or
-///   because of some other action, trigger an [`UpdateNumberInput`] entity event to update the
-///   displayed value.
-// TODO: Add text_input field validation when it becomes available.
+/// The Feathers widget keeps only layout, theming, and hover-only button presentation. Numeric
+/// editing, stepping, and typed value-change behavior are handled by the core widgets.
 pub fn number_input(props: NumberInputProps) -> impl Scene {
+    let number_format = props.number_format;
+
     bsn! {
         :text_input_container()
         ThemeBorderColor({props.sigil_color.clone()})
         FeathersNumberInput
-        template_value(props.number_format)
+        SpinBox
+        Hovered
         on(number_input_on_update)
         Children [
             {
@@ -157,199 +119,175 @@ pub fn number_input(props: NumberInputProps) -> impl Scene {
                     )) as Box<dyn SceneList>,
                     None => Box::new(bsn_list!()) as Box<dyn SceneList>
                 }
-            }
-            text_input(TextInputProps {
-                visible_width: None,
-                max_characters: Some(20),
-            })
-            SelectAllOnFocus,
-            on(number_input_on_text_change)
-            on(number_input_on_enter_key)
-            on(number_input_on_focus_loss)
-            EditableTextFilter::new(|c| {
-                c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')
-            }),
+            },
+            (
+                text_input(TextInputProps {
+                    visible_width: None,
+                    max_characters: Some(20),
+                })
+                CoreNumberInput {
+                    format: number_format,
+                }
+                NumberSpinBoxValueInput
+                SelectAllOnFocus
+            ),
+            (
+                Node {
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
+                    align_self: AlignSelf::Stretch,
+                    justify_content: JustifyContent::Center,
+                    width: px(18),
+                    row_gap: px(1),
+                }
+                template_value(Visibility::Hidden)
+                FeathersSpinButtons
+                Children [
+                    (
+                        button(ButtonProps {
+                            caption: Box::new(bsn_list!((Text("+") ThemedText))),
+                            variant: ButtonVariant::Plain,
+                            ..Default::default()
+                        })
+                        SpinBoxIncrementButton
+                        Node {
+                            min_width: px(18),
+                            height: px(11),
+                            padding: UiRect::axes(px(0), px(0)),
+                        }
+                    ),
+                    (
+                        button(ButtonProps {
+                            caption: Box::new(bsn_list!((Text("-") ThemedText))),
+                            variant: ButtonVariant::Plain,
+                            ..Default::default()
+                        })
+                        SpinBoxDecrementButton
+                        Node {
+                            min_width: px(18),
+                            height: px(11),
+                            padding: UiRect::axes(px(0), px(0)),
+                        }
+                    ),
+                ]
+            ),
         ]
     }
 }
 
-fn number_input_on_text_change(
-    change: On<TextEditChange>,
-    q_parent: Query<&ChildOf>,
-    q_number_input: Query<&NumberFormat, With<FeathersNumberInput>>,
-    q_text_input: Query<&EditableText>,
-    mut commands: Commands,
-) {
-    let Ok(parent) = q_parent.get(change.event_target()) else {
-        return;
-    };
-
-    let Ok(number_format) = q_number_input.get(parent.get()) else {
-        return;
-    };
-
-    let Ok(editable_text) = q_text_input.get(change.event_target()) else {
-        return;
-    };
-
-    let text_value = editable_text.value().to_string();
-    emit_value_change(text_value, *number_format, parent.0, &mut commands, false);
-}
-
 fn number_input_on_update(
     update: On<UpdateNumberInput>,
+    q_feathers: Query<(), With<FeathersNumberInput>>,
+    mut commands: bevy_ecs::system::Commands,
+) {
+    if !q_feathers.contains(update.event_target()) {
+        return;
+    }
+
+    commands.trigger(SetNumberSpinBoxValue {
+        entity: update.event_target(),
+        value: update.value,
+    });
+}
+
+fn update_spinbox_button_visibility(
+    q_spinboxes: Query<(Entity, &Hovered), (With<FeathersNumberInput>, Changed<Hovered>)>,
     q_children: Query<&Children>,
-    q_number_input: Query<(), With<FeathersNumberInput>>,
-    mut q_text_input: Query<&mut EditableText>,
-    focus: Res<InputFocus>,
+    mut q_button_groups: Query<&mut Visibility, With<FeathersSpinButtons>>,
 ) {
-    if !q_number_input.contains(update.event_target()) {
-        return;
-    };
+    for (spinbox, hovered) in q_spinboxes.iter() {
+        let visibility = if hovered.0 {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
 
-    let Ok(children) = q_children.get(update.event_target()) else {
-        return;
-    };
-
-    for child_id in children.iter() {
-        if focus.get() != Some(*child_id)
-            && let Ok(mut editable_text) = q_text_input.get_mut(*child_id)
-        {
-            let new_digits = update.value.to_string();
-            let old_digits = editable_text.value().to_string();
-            if old_digits != new_digits {
-                editable_text.queue_edit(TextEdit::SelectAll);
-                editable_text.queue_edit(TextEdit::Insert(new_digits.into()));
+        for child in q_children.iter_descendants(spinbox) {
+            if let Ok(mut button_visibility) = q_button_groups.get_mut(child) {
+                *button_visibility = visibility;
             }
-            break;
         }
     }
 }
 
-fn number_input_on_enter_key(
-    key_input: On<FocusedInput<KeyboardInput>>,
-    q_parent: Query<&ChildOf>,
-    q_number_input: Query<&NumberFormat, With<FeathersNumberInput>>,
-    q_text_input: Query<&EditableText>,
-    mut commands: Commands,
-) {
-    if key_input.input.key_code != KeyCode::Enter {
-        return;
+/// Plugin which registers the systems for updating Feathers number-input styling.
+pub struct NumberInputPlugin;
+
+impl Plugin for NumberInputPlugin {
+    fn build(&self, app: &mut bevy_app::App) {
+        app.add_systems(
+            PreUpdate,
+            update_spinbox_button_visibility.in_set(PickingSystems::Last),
+        );
     }
-
-    let Ok(parent) = q_parent.get(key_input.event_target()) else {
-        return;
-    };
-
-    let Ok(number_format) = q_number_input.get(parent.get()) else {
-        return;
-    };
-
-    let Ok(editable_text) = q_text_input.get(key_input.event_target()) else {
-        return;
-    };
-
-    let text_value = editable_text.value().to_string();
-    emit_value_change(text_value, *number_format, parent.0, &mut commands, true);
 }
 
-fn number_input_on_focus_loss(
-    focus_lost: On<FocusLost>,
-    q_parent: Query<&ChildOf>,
-    q_number_input: Query<&NumberFormat, With<FeathersNumberInput>>,
-    mut q_text_input: Query<&mut EditableText>,
-    mut commands: Commands,
-) {
-    let editable_text_id = focus_lost.event_target();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy_app::App;
+    use bevy_ecs::{observer::On, prelude::*};
 
-    let Ok(parent) = q_parent.get(editable_text_id) else {
-        return;
-    };
+    #[derive(Resource, Default)]
+    struct ForwardedSpinBoxUpdates(Vec<(Entity, NumberInputValue)>);
 
-    let Ok(number_format) = q_number_input.get(parent.get()) else {
-        return;
-    };
+    #[test]
+    fn update_number_input_forwards_to_core_spinbox_update() {
+        let mut app = App::new();
+        app.init_resource::<ForwardedSpinBoxUpdates>();
 
-    let Ok(editable_text) = q_text_input.get_mut(editable_text_id) else {
-        return;
-    };
+        let root = app
+            .world_mut()
+            .spawn((FeathersNumberInput, SpinBox))
+            .observe(number_input_on_update)
+            .observe(
+                |update: On<SetNumberSpinBoxValue>,
+                 mut forwarded: ResMut<ForwardedSpinBoxUpdates>| {
+                    forwarded.0.push((update.event_target(), update.value));
+                },
+            )
+            .id();
 
-    let text_value = editable_text.value().to_string();
-    emit_value_change(text_value, *number_format, parent.0, &mut commands, true);
-}
+        app.world_mut().commands().trigger(UpdateNumberInput {
+            entity: root,
+            value: NumberInputValue::I32(9),
+        });
+        app.update();
 
-fn emit_value_change(
-    text_value: String,
-    format: NumberFormat,
-    source: Entity,
-    commands: &mut Commands,
-    is_final: bool,
-) {
-    let text_value = text_value.trim();
-    if text_value.is_empty() {
-        return;
+        assert_eq!(
+            app.world().resource::<ForwardedSpinBoxUpdates>().0,
+            vec![(root, NumberInputValue::I32(9))]
+        );
     }
 
-    match format {
-        NumberFormat::F32 => {
-            match text_value.parse::<f32>() {
-                Ok(new_value) => {
-                    commands.trigger(ValueChange {
-                        source,
-                        value: new_value,
-                        is_final,
-                    });
-                }
-                Err(_) => {
-                    // TODO: Emit a validation error once these are defined
-                    warn!("Invalid floating-point number in text edit");
-                }
-            }
-        }
-        NumberFormat::F64 => {
-            match text_value.parse::<f64>() {
-                Ok(new_value) => {
-                    commands.trigger(ValueChange {
-                        source,
-                        value: new_value,
-                        is_final,
-                    });
-                }
-                Err(_) => {
-                    // TODO: Emit a validation error once these are defined
-                    warn!("Invalid floating-point number in text edit");
-                }
-            }
-        }
-        NumberFormat::I32 => {
-            match text_value.parse::<i32>() {
-                Ok(new_value) => {
-                    commands.trigger(ValueChange {
-                        source,
-                        value: new_value,
-                        is_final,
-                    });
-                }
-                Err(_) => {
-                    // TODO: Emit a validation error once these are defined
-                    warn!("Invalid integer number in text edit");
-                }
-            }
-        }
-        NumberFormat::I64 => {
-            match text_value.parse::<i64>() {
-                Ok(new_value) => {
-                    commands.trigger(ValueChange {
-                        source,
-                        value: new_value,
-                        is_final,
-                    });
-                }
-                Err(_) => {
-                    // TODO: Emit a validation error once these are defined
-                    warn!("Invalid integer number in text edit");
-                }
-            }
-        }
+    #[test]
+    fn hover_changes_toggle_spin_button_visibility() {
+        let mut app = App::new();
+        app.add_plugins(NumberInputPlugin);
+
+        let root = app
+            .world_mut()
+            .spawn((FeathersNumberInput, Hovered(false)))
+            .id();
+        let button_group = app
+            .world_mut()
+            .spawn((FeathersSpinButtons, Visibility::Hidden, ChildOf(root)))
+            .id();
+
+        app.world_mut().entity_mut(root).insert(Hovered(true));
+        app.update();
+
+        assert_eq!(
+            app.world().get::<Visibility>(button_group),
+            Some(&Visibility::Visible)
+        );
+
+        app.world_mut().entity_mut(root).insert(Hovered(false));
+        app.update();
+
+        assert_eq!(
+            app.world().get::<Visibility>(button_group),
+            Some(&Visibility::Hidden)
+        );
     }
 }

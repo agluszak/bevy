@@ -46,6 +46,7 @@ impl Plugin for ControlsPlugin {
             ColorSwatchPlugin,
             DisclosureTogglePlugin,
             MenuPlugin,
+            NumberInputPlugin,
             RadioPlugin,
             SliderPlugin,
             TextInputPlugin,
