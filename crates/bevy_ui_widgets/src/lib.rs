@@ -30,6 +30,7 @@ mod button;
 mod checkbox;
 mod menu;
 mod number_input;
+mod number_scrubber;
 mod observe;
 pub mod popover;
 mod radio;
@@ -42,6 +43,7 @@ pub use button::*;
 pub use checkbox::*;
 pub use menu::*;
 pub use number_input::*;
+pub use number_scrubber::*;
 pub use observe::*;
 pub use radio::*;
 pub use ranged_number_input::*;
@@ -70,6 +72,7 @@ impl PluginGroup for UiWidgetsPlugins {
             .add(ScrollbarPlugin)
             .add(SliderPlugin)
             .add(RangedNumberInputPlugin)
+            .add(NumberScrubberPlugin)
             .add(EditableTextInputPlugin)
             .add(NumberInputPlugin)
     }

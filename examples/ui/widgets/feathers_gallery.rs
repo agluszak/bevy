@@ -10,13 +10,13 @@ use bevy::{
         },
         controls::{
             button, checkbox, color_plane, color_slider, color_swatch, disclosure_toggle, menu,
-            menu_button, menu_divider, menu_item, menu_popup, number_input, radio,
+            menu_button, menu_divider, menu_item, menu_popup, number_scrubber, radio,
             ranged_number_input, slider, text_input, text_input_container, toggle_switch,
             tool_button, ButtonProps, ButtonVariant, CheckboxProps, ColorChannel, ColorPlane,
             ColorPlaneValue, ColorSlider, ColorSliderProps, ColorSwatch, ColorSwatchValue,
-            MenuButtonProps, MenuItemProps, NumberInputProps, NumberInputValue, RadioProps,
+            MenuButtonProps, MenuItemProps, NumberInputValue, NumberScrubberProps, RadioProps,
             RangedNumberInputProps, SliderBaseColor, SliderProps, TextInputProps,
-            UpdateNumberInput, UpdateRangedNumberInput,
+            UpdateNumberScrubber, UpdateRangedNumberInput,
         },
         cursor::{EntityCursor, OverrideCursor},
         dark_theme::create_dark_theme,
@@ -682,7 +682,10 @@ fn demo_column_2() -> impl Scene {
                                             :label("A standard group"),
                                             :label_small("Scalar property"),
                                             (
-                                                :number_input(NumberInputProps::default())
+                                                :number_scrubber(NumberScrubberProps {
+                                                    value: NumberInputValue::F32(7.0),
+                                                    ..default()
+                                                })
                                                 DemoScalarField
                                                 Node {
                                                     flex_grow: 1.0,
@@ -698,7 +701,10 @@ fn demo_column_2() -> impl Scene {
                                             ),
                                             :label_small("Scalar property (copy)"),
                                             (
-                                                :number_input(NumberInputProps::default())
+                                                :number_scrubber(NumberScrubberProps {
+                                                    value: NumberInputValue::F32(7.0),
+                                                    ..default()
+                                                })
                                                 DemoScalarField
                                                 Node {
                                                     flex_grow: 1.0,
@@ -722,7 +728,8 @@ fn demo_column_2() -> impl Scene {
                                             }
                                             Children [
                                                 (
-                                                    :number_input(NumberInputProps {
+                                                    :number_scrubber(NumberScrubberProps {
+                                                        value: NumberInputValue::F32(10.1),
                                                         sigil_color: tokens::TEXT_INPUT_X_AXIS,
                                                         label_text: Some("X"),
                                                         ..default()
@@ -741,7 +748,8 @@ fn demo_column_2() -> impl Scene {
                                                     })
                                                 ),
                                                 (
-                                                    :number_input(NumberInputProps {
+                                                    :number_scrubber(NumberScrubberProps {
+                                                        value: NumberInputValue::F32(7.124),
                                                         sigil_color: tokens::TEXT_INPUT_Y_AXIS,
                                                         label_text: Some("Y"),
                                                         ..default()
@@ -759,7 +767,8 @@ fn demo_column_2() -> impl Scene {
                                                     })
                                                 ),
                                                 (
-                                                    :number_input(NumberInputProps {
+                                                    :number_scrubber(NumberScrubberProps {
+                                                        value: NumberInputValue::F32(100.0),
                                                         sigil_color: tokens::TEXT_INPUT_Z_AXIS,
                                                         label_text: Some("Z"),
                                                         ..default()
@@ -871,7 +880,7 @@ fn update_colors(
         }
 
         for scalar_input_ent in q_scalar_input.iter() {
-            commands.trigger(UpdateNumberInput {
+            commands.trigger(UpdateNumberScrubber {
                 entity: scalar_input_ent,
                 value: NumberInputValue::F32(states.scalar_prop),
             });
@@ -891,7 +900,7 @@ fn update_colors(
                 DemoVec3Field::Z => states.vec3_prop.z,
             };
 
-            commands.trigger(UpdateNumberInput {
+            commands.trigger(UpdateNumberScrubber {
                 entity: vec3_input_ent,
                 value: NumberInputValue::F32(new_value),
             });

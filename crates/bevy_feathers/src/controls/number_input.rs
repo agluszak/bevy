@@ -8,9 +8,10 @@ use bevy_scene::prelude::*;
 use bevy_text::{EditableText, FontSource, FontWeight, TextFont};
 use bevy_ui::{px, widget::Text, AlignItems, AlignSelf, Display, JustifyContent, Node, UiRect};
 use bevy_ui_widgets::{
-    NumberInput as CoreNumberInput, RangedNumberInput, RangedNumberInputValueInput,
-    SelectAllOnFocus, SetNumberInputValue, SetRangedNumberInputValue, SliderOrientation,
-    SliderPrecision, SliderRange, SliderValue, TrackClick,
+    NumberInput as CoreNumberInput, NumberScrubber, NumberScrubberValueInput, RangedNumberInput,
+    RangedNumberInputValueInput, SelectAllOnFocus, SetNumberInputValue, SetNumberScrubberValue,
+    SetRangedNumberInputValue, SliderOrientation, SliderPrecision, SliderRange, SliderValue,
+    TrackClick,
 };
 
 use crate::{
@@ -29,6 +30,10 @@ struct FeathersNumberInput;
 /// Marker to indicate a Feathers ranged number input.
 #[derive(Component, Default, Clone)]
 struct FeathersRangedNumberInput;
+
+/// Marker to indicate a Feathers number scrubber.
+#[derive(Component, Default, Clone)]
+struct FeathersNumberScrubber;
 
 /// Parameters for the text input template, passed to [`number_input`] function.
 pub struct NumberInputProps {
@@ -81,6 +86,29 @@ impl Default for RangedNumberInputProps {
     }
 }
 
+/// Parameters for [`number_scrubber`].
+pub struct NumberScrubberProps {
+    /// Current value.
+    pub value: NumberInputValue,
+    /// Number format.
+    pub number_format: NumberFormat,
+    /// Optional colored left strip.
+    pub sigil_color: ThemeToken,
+    /// Optional axis/caption label.
+    pub label_text: Option<&'static str>,
+}
+
+impl Default for NumberScrubberProps {
+    fn default() -> Self {
+        Self {
+            value: NumberInputValue::F32(0.0),
+            number_format: NumberFormat::F32,
+            sigil_color: tokens::TEXT_INPUT_BG,
+            label_text: None,
+        }
+    }
+}
+
 /// Event which can be sent to the styled Feathers number input to update the displayed value.
 #[derive(Clone, EntityEvent)]
 pub struct UpdateNumberInput {
@@ -100,6 +128,16 @@ pub struct UpdateRangedNumberInput {
     pub entity: Entity,
     /// Value to change to.
     pub value: f32,
+}
+
+/// Event sent to the styled Feathers number scrubber to update the displayed value.
+#[derive(Clone, EntityEvent)]
+pub struct UpdateNumberScrubber {
+    /// Target widget.
+    #[event_target]
+    pub entity: Entity,
+    /// Value to change to.
+    pub value: NumberInputValue,
 }
 
 /// Styled Feathers wrapper around the core [`bevy_ui_widgets::NumberInput`].
@@ -191,6 +229,33 @@ pub fn ranged_number_input(props: RangedNumberInputProps) -> impl Scene {
     }
 }
 
+/// Styled Feathers wrapper for an unbounded whole-field numeric scrubber.
+pub fn number_scrubber(props: NumberScrubberProps) -> impl Scene {
+    let number_format = props.number_format;
+    bsn! {
+        :text_input_container()
+        ThemeBorderColor({props.sigil_color.clone()})
+        FeathersNumberScrubber
+        NumberScrubber
+        on(number_scrubber_on_update)
+        Children [
+            { number_label(props.label_text) },
+            (
+                text_input(TextInputProps {
+                    visible_width: None,
+                    max_characters: Some(20),
+                })
+                CoreNumberInput {
+                    format: number_format,
+                }
+                NumberScrubberValueInput
+                SelectAllOnFocus
+                EditableText::new(props.value.to_string())
+            ),
+        ]
+    }
+}
+
 fn number_input_on_update(
     update: On<UpdateNumberInput>,
     q_feathers: Query<(), With<FeathersNumberInput>>,
@@ -228,6 +293,21 @@ fn ranged_number_input_on_update(
     });
 }
 
+fn number_scrubber_on_update(
+    update: On<UpdateNumberScrubber>,
+    q_feathers: Query<(), With<FeathersNumberScrubber>>,
+    mut commands: bevy_ecs::system::Commands,
+) {
+    if !q_feathers.contains(update.event_target()) {
+        return;
+    }
+
+    commands.trigger(SetNumberScrubberValue {
+        entity: update.event_target(),
+        value: update.value,
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,6 +319,9 @@ mod tests {
 
     #[derive(Resource, Default)]
     struct ForwardedRangedUpdates(Vec<(Entity, f32)>);
+
+    #[derive(Resource, Default)]
+    struct ForwardedScrubberUpdates(Vec<(Entity, NumberInputValue)>);
 
     #[test]
     fn update_number_input_forwards_to_core_update() {
@@ -297,6 +380,35 @@ mod tests {
         assert_eq!(
             app.world().resource::<ForwardedRangedUpdates>().0,
             vec![(root, 0.75)]
+        );
+    }
+
+    #[test]
+    fn update_number_scrubber_forwards_to_core_update() {
+        let mut app = App::new();
+        app.init_resource::<ForwardedScrubberUpdates>();
+
+        let root = app
+            .world_mut()
+            .spawn(FeathersNumberScrubber)
+            .observe(number_scrubber_on_update)
+            .observe(
+                |update: On<SetNumberScrubberValue>,
+                 mut forwarded: ResMut<ForwardedScrubberUpdates>| {
+                    forwarded.0.push((update.event_target(), update.value));
+                },
+            )
+            .id();
+
+        app.world_mut().commands().trigger(UpdateNumberScrubber {
+            entity: root,
+            value: NumberInputValue::F32(2.5),
+        });
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<ForwardedScrubberUpdates>().0,
+            vec![(root, NumberInputValue::F32(2.5))]
         );
     }
 }
