@@ -228,7 +228,7 @@ impl Default for SliderStep {
 pub struct SliderPrecision(pub i32);
 
 impl SliderPrecision {
-    fn round(&self, value: f32) -> f32 {
+    pub(crate) fn round(&self, value: f32) -> f32 {
         let factor = ops::powf(10.0_f32, self.0 as f32);
         (value * factor).round() / factor
     }
@@ -242,7 +242,7 @@ pub struct SliderDragState {
     pub dragging: bool,
 
     /// The value of the slider when dragging started.
-    offset: f32,
+    pub(crate) offset: f32,
 }
 
 pub(crate) fn slider_on_pointer_down(

@@ -10,12 +10,13 @@ use bevy::{
         },
         controls::{
             button, checkbox, color_plane, color_slider, color_swatch, disclosure_toggle, menu,
-            menu_button, menu_divider, menu_item, menu_popup, number_input, radio, slider,
-            text_input, text_input_container, toggle_switch, tool_button, ButtonProps,
-            ButtonVariant, CheckboxProps, ColorChannel, ColorPlane, ColorPlaneValue, ColorSlider,
-            ColorSliderProps, ColorSwatch, ColorSwatchValue, MenuButtonProps, MenuItemProps,
-            NumberInputProps, NumberInputValue, RadioProps, SliderBaseColor, SliderProps,
-            TextInputProps, UpdateNumberInput,
+            menu_button, menu_divider, menu_item, menu_popup, number_input, radio,
+            ranged_number_input, slider, text_input, text_input_container, toggle_switch,
+            tool_button, ButtonProps, ButtonVariant, CheckboxProps, ColorChannel, ColorPlane,
+            ColorPlaneValue, ColorSlider, ColorSliderProps, ColorSwatch, ColorSwatchValue,
+            MenuButtonProps, MenuItemProps, NumberInputProps, NumberInputValue, RadioProps,
+            RangedNumberInputProps, SliderBaseColor, SliderProps, TextInputProps,
+            UpdateNumberInput, UpdateRangedNumberInput,
         },
         cursor::{EntityCursor, OverrideCursor},
         dark_theme::create_dark_theme,
@@ -61,6 +62,9 @@ struct DemoDisabledButton;
 
 #[derive(Component, Clone, Copy, Default)]
 struct DemoScalarField;
+
+#[derive(Component, Clone, Copy, Default)]
+struct DemoAlphaField;
 
 #[derive(Component, Clone, Copy, Default)]
 enum DemoVec3Field {
@@ -545,6 +549,20 @@ fn demo_column_1() -> impl Scene {
                 })
             ),
             (
+                ranged_number_input(RangedNumberInputProps {
+                    value: 0.7,
+                    min: 0.0,
+                    max: 1.0,
+                    precision: 2,
+                    label_text: Some("A"),
+                    ..default()
+                })
+                DemoAlphaField
+                on(|change: On<ValueChange<f32>>, mut color: ResMut<DemoWidgetStates>| {
+                    color.rgb_color.alpha = change.value;
+                })
+            ),
+            (
                 Node {
                     display: Display::Flex,
                     align_items: AlignItems::Center,
@@ -778,6 +796,7 @@ fn update_colors(
     mut color_planes: Query<&mut ColorPlaneValue, With<ColorPlane>>,
     q_text_input: Single<(Entity, &mut EditableText), With<HexColorInput>>,
     q_scalar_input: Query<Entity, With<DemoScalarField>>,
+    q_alpha_input: Query<Entity, With<DemoAlphaField>>,
     q_vec3_input: Query<(Entity, &DemoVec3Field)>,
     mut commands: Commands,
     focus: Res<InputFocus>,
@@ -855,6 +874,13 @@ fn update_colors(
             commands.trigger(UpdateNumberInput {
                 entity: scalar_input_ent,
                 value: NumberInputValue::F32(states.scalar_prop),
+            });
+        }
+
+        for alpha_input_ent in q_alpha_input.iter() {
+            commands.trigger(UpdateRangedNumberInput {
+                entity: alpha_input_ent,
+                value: states.rgb_color.alpha,
             });
         }
 

@@ -29,9 +29,11 @@
 mod button;
 mod checkbox;
 mod menu;
+mod number_input;
 mod observe;
 pub mod popover;
 mod radio;
+mod ranged_number_input;
 mod scrollbar;
 mod slider;
 mod text_input;
@@ -39,8 +41,10 @@ mod text_input;
 pub use button::*;
 pub use checkbox::*;
 pub use menu::*;
+pub use number_input::*;
 pub use observe::*;
 pub use radio::*;
+pub use ranged_number_input::*;
 pub use scrollbar::*;
 pub use slider::*;
 pub use text_input::*;
@@ -65,7 +69,9 @@ impl PluginGroup for UiWidgetsPlugins {
             .add(RadioGroupPlugin)
             .add(ScrollbarPlugin)
             .add(SliderPlugin)
+            .add(RangedNumberInputPlugin)
             .add(EditableTextInputPlugin)
+            .add(NumberInputPlugin)
     }
 }
 
