@@ -163,6 +163,15 @@ impl NumberInputValue {
             NumberInputValue::I64(value) => value as f32,
         }
     }
+
+    pub(crate) fn as_f64(self) -> f64 {
+        match self {
+            NumberInputValue::F32(value) => value.into(),
+            NumberInputValue::F64(value) => value,
+            NumberInputValue::I32(value) => value.into(),
+            NumberInputValue::I64(value) => value as f64,
+        }
+    }
 }
 
 impl core::fmt::Display for NumberInputValue {
